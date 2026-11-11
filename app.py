@@ -1,61 +1,58 @@
 import streamlit as st
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from supabase import create_client
+from src.data_analysis import CloudNetflixAnalyzer  # Import your updated engine
 
 st.set_page_config(page_title="Netflix Cloud Pipeline Dashboard", layout="wide")
-
 st.title("🎬 Netflix Full-Stack Data Pipeline Dashboard")
-st.markdown("An IT Final Year Project linking a Python ETL architecture to a Supabase Cloud Database.")
 
-# Read production environment keys safely via Streamlit Secrets
+# 1. Establish Secure Credentials Connection
 try:
     URL = st.secrets["SUPABASE_URL"]
     KEY = st.secrets["SUPABASE_KEY"]
 except Exception:
-    st.error("🔒 Streamlit API Database Secrets are missing. Please add them to your cloud dashboard settings.")
+    st.error("🔒 Streamlit API Database Secrets are missing.")
     st.stop()
 
-@st.cache_data
-def get_live_data():
-    supabase = create_client(URL, KEY)
-    # Pull data using relational cloud queries
-    response = supabase.table("netflix_titles").select("*").execute()
-    return pd.DataFrame(response.data)
+# 2. Initialize the Analytical Engine
+analyzer = CloudNetflixAnalyzer(URL, KEY)
 
 try:
-    df = get_live_data()
-    st.success(f"⚡ Live Connection Established! Fetched {len(df)} database entries from Supabase Cloud.")
+    # 3. Pull Live KPI Aggregates
+    metrics = analyzer.fetch_summary_metrics()
     
-    # KPI Grid Matrix
+    st.success("⚡ Live Connection Established with Supabase Cloud Postgres!")
+    
+    # Render KPI Cards
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Cloud Registered Titles", len(df))
-    kpi2.metric("Total Movies", len(df[df['type'] == 'Movie']))
-    kpi3.metric("Total TV Shows", len(df[df['type'] == 'TV Show']))
+    kpi1.metric("Cloud Registered Titles", metrics["total"])
+    kpi2.metric("Total Movies", metrics["movies"])
+    kpi3.metric("Total TV Shows", metrics["shows"])
     
-    # Visual Analytics Layer
+    # 4. Render Visual Analytics Layer using Engine functions
     st.subheader("📊 Relational Database Analytics Visuals")
     col_left, col_right = st.columns(2)
     
     with col_left:
         st.write("### Production Strategy Breakdown")
+        dist = analyzer.get_content_distribution()
         fig, ax = plt.subplots()
-        df['type'].value_counts().plot(kind='pie', autopct='%1.1f%%', colors=['#E50914', '#221F1F'], ax=ax)
+        dist.plot(kind='pie', autopct='%1.1f%%', colors=['#E50914', '#221F1F'], ax=ax)
         st.pyplot(fig)
         
     with col_right:
-        st.write("### Target Audience Rating Distribution")
+        st.write("### Top Content Genres")
+        genres = analyzer.get_top_genres()
         fig, ax = plt.subplots()
-        sns.countplot(data=df, x='rating', order=df['rating'].value_counts().index[:8], palette="Reds_r", ax=ax)
-        plt.xticks(rotation=45)
+        sns.barplot(x=genres.values, y=genres.index, palette="Reds_r", ax=ax)
         st.pyplot(fig)
         
-    # Backend verification inspection module for professors
+    # 5. Database Table Preview Module for Professors
     st.markdown("---")
     st.subheader("🔍 Real-time Cloud DB Inspector")
     with st.expander("Click to query live relational tables under-the-hood"):
-        st.dataframe(df[['show_id', 'type', 'title', 'country', 'date_added', 'year_added']].head(15))
+        sample_df = analyzer.get_raw_sample(15)
+        st.dataframe(sample_df)
         
 except Exception as err:
-    st.error(f"❌ Connection Interrupted: Failed to parse structural data layers. {err}")
+    st.error(f"❌ Connection Interrupted: {err}")
